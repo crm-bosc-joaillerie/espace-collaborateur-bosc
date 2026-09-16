@@ -1,0 +1,19 @@
+{
+  "name": "Espace Collaborateurs — Maison Bosc",
+  "short_name": "Équipe Bosc",
+  "description": "Espace de travail interne des collaborateurs de la Maison Bosc Joaillerie",
+  "lang": "fr",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#F5F1E8",
+  "theme_color": "#19213D",
+  "icons": [
+    {
+      "src": "/app-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
