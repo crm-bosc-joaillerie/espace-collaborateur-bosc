@@ -1,16 +1,42 @@
 {
+  "id": "/",
   "name": "CRM Collaborateurs — Maison Bosc",
   "short_name": "CRM Bosc",
   "description": "Espace de travail des collaborateurs de Maison Bosc Joaillerie.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
+  "display_override": [
+    "standalone",
+    "minimal-ui"
+  ],
   "orientation": "any",
   "background_color": "#F7F3EC",
   "theme_color": "#19213D",
   "lang": "fr-FR",
+  "categories": [
+    "business",
+    "productivity"
+  ],
+  "prefer_related_applications": false,
   "icons": [
-    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
-    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
   ]
 }
