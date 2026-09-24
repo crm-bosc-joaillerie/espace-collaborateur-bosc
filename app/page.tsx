@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { CalendarDays, CalendarRange, ChevronRight, CircleDollarSign, ClipboardList, ExternalLink, KeyRound, LockKeyhole, LogOut, Menu, MessageCircle, ShoppingBag, Plus, Search, Send, ShieldCheck, Sparkles, UserRound, UsersRound, X } from "lucide-react";
+import { CalendarDays, CalendarRange, ChevronRight, CircleDollarSign, ClipboardList, Download, ExternalLink, KeyRound, LockKeyhole, LogOut, Menu, MessageCircle, ShoppingBag, Plus, Search, Send, ShieldCheck, Sparkles, UserRound, UsersRound, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -446,6 +446,45 @@ function Brand({light=false}:{light?:boolean}) { return <div className="relative
   <div><div className={`font-serif text-lg tracking-wide ${light?"text-white":"text-[#20253A]"}`}>MAISON BOSC</div><div className={`text-[10px] tracking-[.22em] ${light?"text-white/40":"text-[#57617E]"}`}>JOAILLERIE</div></div>
   </div> }
 
+type BeforeInstallPromptEvent = Event & {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
+};
+
+function InstallAppButton() {
+  const [installEvent, setInstallEvent] = useState<BeforeInstallPromptEvent | null>(null);
+  const [installed, setInstalled] = useState(false);
+
+  useEffect(() => {
+    const onBeforeInstall = (event: Event) => {
+      event.preventDefault();
+      setInstallEvent(event as BeforeInstallPromptEvent);
+    };
+    const onInstalled = () => {
+      setInstalled(true);
+      setInstallEvent(null);
+    };
+    if (window.matchMedia("(display-mode: standalone)").matches || (navigator as Navigator & { standalone?: boolean }).standalone) {
+      setInstalled(true);
+    }
+    window.addEventListener("beforeinstallprompt", onBeforeInstall);
+    window.addEventListener("appinstalled", onInstalled);
+    return () => {
+      window.removeEventListener("beforeinstallprompt", onBeforeInstall);
+      window.removeEventListener("appinstalled", onInstalled);
+    };
+  }, []);
+
+  if (installed || !installEvent) return null;
+  return <Button type="button" onClick={async () => {
+    await installEvent.prompt();
+    await installEvent.userChoice;
+    setInstallEvent(null);
+  }} className="h-11 w-full bg-[#303851] hover:bg-[#19213D] text-white rounded-xl">
+    <Download className="size-4" /> Installer CRM Bosc
+  </Button>;
+}
+
 function Login({ onEnter }:{ onEnter:(name:string)=>void }) {
   const [email,setEmail]=useState(""); const [otp,setOtp]=useState(""); const [name,setName]=useState(""); const [localCode,setLocalCode]=useState("");
   const [step,setStep]=useState<"email"|"otp"|"profile">("email"); const [busy,setBusy]=useState(false); const [error,setError]=useState(""); const [notice,setNotice]=useState("");
@@ -469,7 +508,7 @@ function Login({ onEnter }:{ onEnter:(name:string)=>void }) {
       {step==="otp"&&<form onSubmit={validateOtp} className="space-y-5"><label className="grid gap-2 text-sm font-medium">Code reçu par e-mail<Input value={otp} onChange={e=>setOtp(e.target.value.replace(/\D/g,"").slice(0,8))} inputMode="numeric" pattern="[0-9]{8}" maxLength={8} autoComplete="one-time-code" placeholder="8 chiffres" className="h-12 bg-[#F7F3EC] text-center text-lg tracking-[.35em]" autoFocus/></label><Button type="submit" disabled={busy||otp.length!==8} className="h-12 w-full bg-[#19213D] hover:bg-[#303851] text-white rounded-xl">{busy?"Vérification…":"Valider le code"} <ChevronRight/></Button><button type="button" className="w-full text-sm text-[#57617E] underline" onClick={()=>{setStep("email");setOtp("");setNotice("");}}>Changer d’adresse</button></form>}
       {step==="profile"&&<form onSubmit={e=>{e.preventDefault();finishProfile()}} className="space-y-5"><label className="grid gap-2 text-sm font-medium">{lockedName?"Collaborateur autorisé":"Votre prénom"}<Input required readOnly={Boolean(lockedName)} value={name} onChange={e=>setName(e.target.value)} placeholder="Saisissez votre prénom" className={`h-12 bg-[#F7F3EC] ${lockedName?"font-semibold text-[#303851]":""}`} autoFocus/></label>{lockedName&&<p className="-mt-3 text-xs text-[#57617E]">Cet espace est réservé à {lockedName}.</p>}<label className="grid gap-2 text-sm font-medium">Code personnel de l’application<Input required value={localCode} onChange={e=>setLocalCode(e.target.value.replace(/\D/g,"").slice(0,4))} inputMode="numeric" pattern="[0-9]{4}" maxLength={4} placeholder="4 chiffres" className="h-12 bg-[#F7F3EC] text-center text-lg tracking-[.45em]"/></label><Button type="submit" disabled={!name.trim()||localCode.length!==4} className="h-12 w-full bg-[#19213D] hover:bg-[#303851] text-white rounded-xl">Ouvrir mon espace <ChevronRight/></Button><button type="button" className="w-full text-sm text-[#57617E] underline" onClick={()=>void signOut().then(()=>{setStep("email");setName("");setLocalCode("")})}>Changer de compte</button></form>}
       {error&&<p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</p>}{notice&&<p role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">{notice}</p>}
-      <a href={MAIN_CRM_URL} target="_blank" rel="noreferrer" className="flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-[#D9DCE5] bg-white text-sm font-medium text-[#303851] transition hover:border-[#57617E] hover:bg-[#F7F3EC]">Ouvrir le CRM principal <ExternalLink className="size-4"/></a><p className="text-xs text-[#57617E] leading-relaxed rounded-xl bg-[#F7F3EC] p-3">Le code reçu par e-mail sécurise l’accès aux données. Le code personnel à 4 chiffres identifie votre espace sur cet appareil.</p></CardContent></Card></section>
+      <InstallAppButton/><a href={MAIN_CRM_URL} target="_blank" rel="noreferrer" className="flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-[#D9DCE5] bg-white text-sm font-medium text-[#303851] transition hover:border-[#57617E] hover:bg-[#F7F3EC]">Ouvrir le CRM principal <ExternalLink className="size-4"/></a><p className="text-xs text-[#57617E] leading-relaxed rounded-xl bg-[#F7F3EC] p-3">Le code reçu par e-mail sécurise l’accès aux données. Le code personnel à 4 chiffres identifie votre espace sur cet appareil.</p></CardContent></Card></section>
   </main>;
 }
 
