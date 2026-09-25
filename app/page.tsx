@@ -632,36 +632,25 @@ function Pochettes({rows,onSave}:{rows:PochettesRow[];onSave:(data:Record<string
     <div className="relative mb-4 max-w-sm"><Search className="absolute left-3 top-3 size-4 text-[#57617E]/70"/><Input value={q} onChange={e=>setQ(e.target.value)} placeholder="Rechercher…" className="pl-9"/></div>
     <div className="mb-5 grid gap-4 md:grid-cols-2"><label className="grid gap-2 text-sm font-semibold uppercase tracking-[.12em] text-[#57617E]">MOIS<select value={month} onChange={e=>resetWeekIfNeeded(e.target.value)} className="h-12 rounded-xl border border-[#D9DCE5] bg-white px-4 text-base font-normal normal-case tracking-normal text-[#20253A]"><option>Tous les mois</option>{months.map(([value,label])=><option key={value} value={value}>{label.charAt(0).toUpperCase()+label.slice(1)}</option>)}</select></label><label className="grid gap-2 text-sm font-semibold uppercase tracking-[.12em] text-[#57617E]">NUMÉRO DE SEMAINE<select value={week} onChange={e=>setWeek(e.target.value)} className="h-12 rounded-xl border border-[#D9DCE5] bg-white px-4 text-base font-normal normal-case tracking-normal text-[#20253A]"><option>Toutes les semaines</option>{weeks.map(([value,label])=><option key={value} value={value}>{label}</option>)}</select></label></div>
     {formOpen&&<Card className="mb-5 rounded-2xl border-[#D9DCE5] shadow-none"><CardContent className="grid sm:grid-cols-2 lg:grid-cols-5 gap-3 p-5"><Input value={form.no} onChange={e=>setForm({...form,no:e.target.value})} placeholder="N° pochette"/><Input value={form.client} onChange={e=>setForm({...form,client:e.target.value})} placeholder="Client"/><Input value={form.piece} onChange={e=>setForm({...form,piece:e.target.value})} placeholder="Travail"/><Input value={form.livraison} onChange={e=>setForm({...form,livraison:e.target.value})} placeholder="Livraison"/><div className="flex gap-2"><select value={form.etat} onChange={e=>setForm({...form,etat:e.target.value})} aria-label="Statut de la pochette" className="h-10 min-w-0 flex-1 rounded-md border border-[#D9DCE5] bg-[#F7F3EC] px-3 text-sm text-[#20253A] focus:outline-none focus:ring-2 focus:ring-[#57617E]"><option value="">Choisir…</option>{POCHETTE_STATUS_OPTIONS.map(status=><option key={status} value={status}>{status}</option>)}</select><Button onClick={()=>void save()} disabled={saving} className="bg-[#19213D] hover:bg-[#303851]">{saving?"…":"Enregistrer"}</Button></div></CardContent></Card>}
-    {monthOnly&&<p className="mb-4 text-sm text-[#57617E]">Chaque semaine est identifiée par une couleur différente.</p>}{!hasFilter?<div className="rounded-2xl border border-dashed border-[#D9DCE5] bg-white p-10 text-center text-[#57617E]">Sélectionnez un mois ou un numéro de semaine pour afficher les pochettes.</div>:<div className="grid gap-4">{filtered.map(p => {
+    {monthOnly&&<p className="mb-4 text-sm text-[#57617E]">Chaque semaine est identifiée par une couleur différente.</p>}{!hasFilter?<div className="rounded-2xl border border-dashed border-[#D9DCE5] bg-white p-10 text-center text-[#57617E]">Sélectionnez un mois ou un numéro de semaine pour afficher les pochettes.</div>:<div className="grid gap-3 overflow-x-auto pb-2">{filtered.map(p => {
       const photo = findPhotoSource(p.data);
       return (
-        <Card key={p._crmId || p.no} className={`rounded-2xl border-[#D9DCE5] shadow-none ${monthOnly ? (weekColors.get(p.weekKey) || "bg-white") : "bg-white"}`}>
-          <CardContent className="p-4 sm:p-5">
-            <div className="flex min-w-0 items-start gap-4">
-              {photo ? (
-                <button type="button" onClick={() => setPhotoPreview({src:photo,no:p.no,client:p.client})}
-                  className="shrink-0 cursor-zoom-in overflow-hidden rounded-xl" aria-label={`Agrandir la photo de la pochette ${p.no}`}>
-                  <img src={photo} alt={`Photo de la pochette ${p.no}`}
-                    className="size-20 border border-[#D9DCE5] bg-white object-cover sm:size-24"/>
-                </button>
-              ) : <div className="grid size-20 shrink-0 place-items-center rounded-xl border border-dashed border-[#D9DCE5] text-center text-xs text-[#57617E] sm:size-24">Sans photo</div>}
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="text-xs font-semibold uppercase tracking-[.1em] text-[#57617E]">Pochette n° {p.no}</p>
-                    <p className="mt-1 break-words text-lg font-semibold leading-tight text-[#20253A]">{p.client}</p>
-                  </div>
-                  <Badge variant="outline" className={`h-auto w-auto max-w-full shrink-0 self-start whitespace-normal px-2.5 py-1 text-xs ${tone(p.etat)}`}>{p.etat}</Badge>
-                </div>
-                {p.weekLabel && <p className="mt-2 text-xs font-semibold text-[#57617E]">{p.weekLabel}</p>}
-              </div>
-            </div>
-            <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 border-t border-[#D9DCE5] pt-4 sm:grid-cols-3">
-              <div className="min-w-0"><p className="text-xs uppercase tracking-[.1em] text-[#57617E]">Travail</p><p className="mt-1 break-words text-sm font-medium">{p.piece}</p></div>
-              <div className="min-w-0"><p className="text-xs uppercase tracking-[.1em] text-[#57617E]">Livraison</p><p className="mt-1 break-words text-sm font-medium">{p.livraison || "—"}</p></div>
-              <div className="min-w-0"><p className="text-xs uppercase tracking-[.1em] text-[#57617E]">Durée</p><p className="mt-1 break-words text-sm font-medium">{p.duree || "—"}</p></div>
-            </div>
-            <div className="mt-4 flex flex-wrap gap-2">
+        <Card key={p._crmId || p.no} className={`min-w-[1220px] rounded-2xl border-[#D9DCE5] shadow-none ${monthOnly ? (weekColors.get(p.weekKey) || "bg-white") : "bg-white"}`}>
+          <CardContent className="grid grid-cols-[72px_110px_minmax(130px,1.1fr)_minmax(145px,1.2fr)_110px_95px_95px_105px_200px] items-center gap-3 p-3">
+            {photo ? (
+              <button type="button" onClick={() => setPhotoPreview({src:photo,no:p.no,client:p.client})}
+                className="cursor-zoom-in overflow-hidden rounded-lg" aria-label={`Agrandir la photo de la pochette ${p.no}`}>
+                <img src={photo} alt={`Photo de la pochette ${p.no}`} className="size-16 rounded-lg border border-[#D9DCE5] bg-white object-cover"/>
+              </button>
+            ) : <div className="grid size-16 place-items-center rounded-lg border border-dashed border-[#D9DCE5] text-center text-xs text-[#57617E]">Sans photo</div>}
+            <div className="min-w-0"><p className="text-xs uppercase text-[#57617E]">Pochette</p><p className="font-semibold text-[#20253A]">{p.no}</p></div>
+            <div className="min-w-0"><p className="text-xs uppercase text-[#57617E]">Client</p><p className="break-words font-medium">{p.client}</p></div>
+            <div className="min-w-0"><p className="text-xs uppercase text-[#57617E]">Travail</p><p className="break-words text-sm">{p.piece}</p></div>
+            <div><p className="text-xs uppercase text-[#57617E]">Livraison</p><p className="text-sm font-medium">{p.livraison || "—"}</p></div>
+            <div><p className="text-xs uppercase text-[#57617E]">Durée</p><p className="text-sm font-medium">{p.duree || "—"}</p></div>
+            <div><p className="text-xs uppercase text-[#57617E]">Semaine</p><p className="text-sm font-medium">{p.weekLabel || "—"}</p></div>
+            <Badge variant="outline" className={`h-auto w-fit whitespace-normal px-2 py-1 text-xs ${tone(p.etat)}`}>{p.etat}</Badge>
+            <div className="flex gap-1.5">
               <Button size="sm" variant="outline" onClick={() => setSelected(p)}>Ouvrir la fiche</Button>
               <Button size="sm" variant="outline" onClick={() => openEditor(p)}>Modifier</Button>
             </div>
