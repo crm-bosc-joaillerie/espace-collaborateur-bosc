@@ -605,7 +605,12 @@ function Pochettes({rows,onSave}:{rows:PochettesRow[];onSave:(data:Record<string
   const filtered=useMemo(()=>rows.filter(p=>{
     const haystack=[p.no,p.client,p.piece,p.livraison,p.etat,p.monthLabel,p.weekLabel,JSON.stringify(p.data||{})].join(" ").toLowerCase();
     return haystack.includes(q.toLowerCase())&&(month==="Tous les mois"||p.monthKey===month)&&(week==="Toutes les semaines"||p.weekKey===week);
-  }).sort((a,b)=>`${a.dateKey} ${a.no}`.localeCompare(`${b.dateKey} ${b.no}`,"fr")),[q,rows,month,week]);
+  }).sort((a,b)=>
+    (a.monthKey || "9999-99").localeCompare(b.monthKey || "9999-99") ||
+    (a.weekKey || "9999-S99").localeCompare(b.weekKey || "9999-S99") ||
+    (a.dateKey || "9999-99-99").localeCompare(b.dateKey || "9999-99-99") ||
+    a.no.localeCompare(b.no, "fr", { numeric:true })
+  ),[q,rows,month,week]);
   const weekColors=useMemo(()=>weekColorMap(filtered.map(row=>row.weekKey)),[filtered]);
   const resetWeekIfNeeded=(nextMonth:string)=>{
     setMonth(nextMonth);
