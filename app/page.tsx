@@ -561,7 +561,13 @@ function Planning({rows}:{rows:PlanningRow[]}) {
   const monthOnly = month !== "Tous les mois" && week === "Toutes les semaines";
   const filtered = useMemo(() => rows
     .filter(row => (month === "Tous les mois" || row.monthKey === month) && (week === "Toutes les semaines" || row.weekKey === week))
-    .sort((a, b) => `${a.dateKey} ${a.heure}`.localeCompare(`${b.dateKey} ${b.heure}`, "fr")), [rows, month, week]);
+    .sort((a, b) =>
+      (a.monthKey || "9999-99").localeCompare(b.monthKey || "9999-99") ||
+      (a.weekKey || "9999-S99").localeCompare(b.weekKey || "9999-S99") ||
+      (a.dateKey || "9999-99-99").localeCompare(b.dateKey || "9999-99-99") ||
+      a.heure.localeCompare(b.heure, "fr") ||
+      a.pochette.localeCompare(b.pochette, "fr", { numeric:true })
+    ), [rows, month, week]);
   const weekColors = useMemo(() => weekColorMap(filtered.map(row => row.weekKey)), [filtered]);
   const resetWeekIfNeeded = (nextMonth:string) => {
     setMonth(nextMonth);
