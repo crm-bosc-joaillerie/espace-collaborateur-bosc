@@ -1,4 +1,4 @@
-const CACHE_NAME = "bosc-collaborateurs-shell-v3";
+const CACHE_NAME = "bosc-collaborateurs-shell-v4";
 
 self.addEventListener("install", (event) => {
   // Keep installation lightweight and reliable on Android WebAPK and iOS browsers.
