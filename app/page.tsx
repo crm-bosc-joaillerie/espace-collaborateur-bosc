@@ -679,7 +679,10 @@ export default function Home() {
   useEffect(()=>{
     if(!name)return;
     const timer=window.setInterval(()=>{if(!document.hidden)void readSharedCrm().then(setShared).catch(()=>{})},20000);
-    return ()=>window.clearInterval(timer);
+    const refreshOnReturn=()=>{if(!document.hidden)void readSharedCrm().then(setShared).catch(()=>{})};
+    document.addEventListener("visibilitychange",refreshOnReturn);
+    window.addEventListener("pageshow",refreshOnReturn);
+    return ()=>{window.clearInterval(timer);document.removeEventListener("visibilitychange",refreshOnReturn);window.removeEventListener("pageshow",refreshOnReturn)};
   },[name]);
   useEffect(()=>{
     if(!name||!shared)return;
