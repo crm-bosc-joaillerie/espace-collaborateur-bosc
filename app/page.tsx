@@ -595,6 +595,8 @@ function Pochettes({rows,onSave}:{rows:PochettesRow[];onSave:(data:Record<string
   const [editing,setEditing]=useState<PochettesRow|null>(null);
   const [selected,setSelected]=useState<PochettesRow|null>(null);
   const [photoPreview,setPhotoPreview]=useState<{src:string; no:string; client:string}|null>(null);
+  const lastPochetteTap=useRef<{id:string; at:number; x:number; y:number}|null>(null);
+  const touchStart=useRef<{x:number; y:number}|null>(null);
   const [formOpen,setFormOpen]=useState(false);
   const [saving,setSaving]=useState(false);
   const [form,setForm]=useState({no:"",client:"",piece:"",livraison:"",etat:"En attente",note:""});
@@ -629,7 +631,7 @@ function Pochettes({rows,onSave}:{rows:PochettesRow[];onSave:(data:Record<string
     {monthOnly&&<p className="mb-4 text-sm text-[#57617E]">Chaque semaine est identifiée par une couleur différente.</p>}{!hasFilter?<div className="rounded-2xl border border-dashed border-[#D9DCE5] bg-white p-10 text-center text-[#57617E]">Sélectionnez un mois ou un numéro de semaine pour afficher les pochettes.</div>:<div className="grid gap-3 overflow-x-auto pb-2">{filtered.map(p => {
       const photo = findPhotoSource(p.data);
       return (
-        <Card key={p._crmId || p.no} className={`min-w-[1220px] rounded-2xl border-[#D9DCE5] shadow-none ${monthOnly ? (weekColors.get(p.weekKey) || "bg-white") : "bg-white"}`}>
+        <Card key={p._crmId || p.no} onDoubleClick={e=>{if(!(e.target as HTMLElement).closest("button"))setSelected(p)}} onTouchStart={e=>{touchStart.current={x:e.touches[0].clientX,y:e.touches[0].clientY}}} onTouchEnd={e=>{if((e.target as HTMLElement).closest("button"))return;const start=touchStart.current;touchStart.current=null;const point=e.changedTouches[0];if(!start||!point||Math.hypot(point.clientX-start.x,point.clientY-start.y)>12){lastPochetteTap.current=null;return}const id=String(p._crmId || p.no),now=Date.now(),last=lastPochetteTap.current;if(last&&last.id===id&&now-last.at<450&&Math.hypot(point.clientX-last.x,point.clientY-last.y)<40){lastPochetteTap.current=null;setSelected(p)}else lastPochetteTap.current={id,at:now,x:point.clientX,y:point.clientY}}} className={`touch-manipulation min-w-[1220px] rounded-2xl border-[#D9DCE5] shadow-none ${monthOnly ? (weekColors.get(p.weekKey) || "bg-white") : "bg-white"}`}>
           <CardContent className="grid grid-cols-[72px_110px_minmax(130px,1.1fr)_minmax(145px,1.2fr)_110px_95px_95px_105px_200px] items-center gap-3 p-3">
             {photo ? (
               <button type="button" onClick={() => setPhotoPreview({src:photo,no:p.no,client:p.client})}
@@ -646,7 +648,6 @@ function Pochettes({rows,onSave}:{rows:PochettesRow[];onSave:(data:Record<string
             <Badge variant="outline" className={`h-auto w-fit whitespace-normal px-2 py-1 text-xs ${tone(p.etat)}`}>{p.etat}</Badge>
             <div className="flex gap-1.5">
               <Button size="sm" variant="outline" onClick={() => setSelected(p)}>Ouvrir la fiche</Button>
-              <Button size="sm" variant="outline" onClick={() => openEditor(p)}>Modifier</Button>
             </div>
           </CardContent>
         </Card>
