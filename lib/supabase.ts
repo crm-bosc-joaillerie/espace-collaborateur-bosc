@@ -1,10 +1,9 @@
 import { createClient } from "@supabase/supabase-js";
 
-// Ces deux valeurs sont la configuration publique du projet Supabase du CRM.
-// La clé publishable n'est pas une clé d'administration : les droits restent
-// contrôlés par la session et les politiques RLS de Supabase.
-const SUPABASE_URL = "https://vdmlixjrbudklieictfj.supabase.co";
-const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_5DSJ2xzo2pokkFbkB0FTRg_7T4DDwKg";
+// Projet dédié au CRM collaborateurs. La clé publishable est publique ;
+// les autorisations sont appliquées par les politiques RLS de cette base.
+const SUPABASE_URL = "https://fqafgbboatbnljeoxtkq.supabase.co";
+const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_h0ARNvQAEySQmr5WzKVBcg_5mVVz7mR";
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
   auth: {
@@ -12,7 +11,6 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
     autoRefreshToken: true,
     detectSessionInUrl: true,
     flowType: "implicit",
-    storageKey: "bosc-collaborateurs-auth",
+    storageKey: "bosc-collaborateurs-isolated-auth",
   },
 });
-
