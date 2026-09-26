@@ -246,6 +246,7 @@ function planningDateFromData(data:Record<string, any>) {
 
 function planningMonthInfo(data:Record<string, any>, date:Date | null) {
   const value = pick(data, "mois", "month");
+  if (value === "À planifier") return { key:"non-planifie", label:"À planifier" };
   const match = value.match(/(janvier|février|fevrier|mars|avril|mai|juin|juillet|août|aout|septembre|octobre|novembre|décembre|decembre)\s+(\d{4})/i);
   if (match) {
     const monthNames = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"];
@@ -259,6 +260,7 @@ function planningMonthInfo(data:Record<string, any>, date:Date | null) {
 
 function planningWeekInfo(data:Record<string, any>, date:Date | null) {
   const value = pick(data, "semaine", "week", "numeroSemaine", "numSemaine");
+  if (value === "À définir") return { key:"non-planifie", label:"À définir" };
   const match = value.match(/(?:semaine|week|s)?\s*0?(\d{1,2})/i);
   if (match) {
     const year = value.match(/\b(20\d{2})\b/)?.[1] || (date ? String(date.getUTCFullYear()) : "");
