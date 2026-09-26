@@ -1,7 +1,5 @@
 import { supabase } from "./supabase";
 
-const WORKSPACE = "bosc";
-
 export type CrmRecord = {
   id: string;
   record_key: string;
@@ -26,60 +24,30 @@ export function recordData(row: CrmRecord): Record<string, any> {
 
 export async function currentUser() {
   const { data, error } = await supabase.auth.getUser();
-  if (error) throw new Error("Session CRM invalide. Reconnectez-vous.");
+  if (error || !data.user) throw new Error("Session CRM invalide. Reconnectez-vous.");
   return data.user;
 }
 
-type TrustedAdminDevice = {
-  device_key: string;
-  last_used_at?: string | null;
-  created_at?: string | null;
-  revoked_at?: string | null;
-};
-
-/** Verify the same administrator PIN used by the main CRM. */
-export async function verifyPrincipalAdminCode(pin: string) {
+export async function getStaffProfile() {
   const user = await currentUser();
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("role,is_active")
-    .eq("id", user?.id || "")
-    .maybeSingle();
-  if (profileError) throw new Error("Impossible de vérifier les droits administrateur.");
-  if (!profile?.is_active || !["owner", "admin"].includes(String(profile.role || "").toLowerCase())) {
-    return { success: false, error: "Ce compte ne dispose pas des droits administrateur du CRM principal." };
-  }
+  if (!user) return null;
+  const { data, error } = await supabase.from("profiles")
+    .select("id,full_name,role,is_active").eq("id", user.id).maybeSingle();
+  if (error) throw new Error("Impossible de vérifier les droits du collaborateur.");
+  if (!data?.is_active) return null;
+  return data as { id:string; full_name:string; role:"owner"|"admin"|"collaborator"; is_active:boolean };
+}
 
-  const { data: devices, error: devicesError } = await supabase.rpc("list_trusted_devices");
-  if (devicesError) throw new Error("Impossible de lire les appareils administrateurs du CRM principal.");
-  const activeDevices = ((Array.isArray(devices) ? devices : []) as TrustedAdminDevice[])
-    .filter((device) => device.device_key && !device.revoked_at)
-    .sort((a, b) => {
-      const aDate = Date.parse(a.last_used_at || a.created_at || "") || 0;
-      const bDate = Date.parse(b.last_used_at || b.created_at || "") || 0;
-      return bDate - aDate;
-    });
-  if (activeDevices.length === 0) {
-    return { success: false, error: "Aucun appareil administrateur n’est encore enregistré dans le CRM principal." };
-  }
-
-  const { data: result, error } = await supabase.rpc("verify_device_pin", {
-    p_device_key: activeDevices[0].device_key,
-    p_pin: pin,
-  });
-  if (error) throw new Error(error.message);
-  if (result?.success) return { success: true };
-  if (result?.locked_until) {
-    return { success: false, error: `Trop d’essais. Réessayez après ${new Date(result.locked_until).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}.` };
-  }
-  return { success: false, error: "Code administrateur incorrect." };
+export async function verifyPrincipalAdminCode(_pin: string) {
+  const profile = await getStaffProfile();
+  return { success: profile?.role === "owner" || profile?.role === "admin",
+    error: "Accès réservé à un administrateur du CRM collaborateurs." };
 }
 
 export async function readModule(module: string) {
   const { data, error } = await supabase
     .from("crm_records")
     .select("id,record_key,module,data")
-    .eq("workspace_key", WORKSPACE)
     .eq("module", module)
     .order("created_at", { ascending: true });
   if (error) throw new Error(error.message);
@@ -140,7 +108,7 @@ export async function saveRecord(module: string, input: Record<string, any>, pre
   const result = existing
     ? await supabase.from("crm_records").update({ data: payload, updated_by: user.id }).eq("id", existing.id)
     : await supabase.from("crm_records").insert({
-      workspace_key: WORKSPACE,
+      assigned_user_id: module === "discussion" ? null : user.id,
       module,
       record_key: recordKey,
       data: payload,
