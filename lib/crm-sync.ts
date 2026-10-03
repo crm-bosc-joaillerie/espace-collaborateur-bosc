@@ -1,3 +1,4 @@
+import { stopDeviceNotifications } from "./Notifications";
 const ENDPOINT = "https://vdmlixjrbudklieictfj.supabase.co/functions/v1/collaborator-gateway";
 const PUBLISHABLE_KEY = "sb_publishable_5DSJ2xzo2pokkFbkB0FTRg_7T4DDwKg";
 const DEVICE_KEY = "bosc-collaborateur-appareil";
@@ -55,10 +56,28 @@ export async function saveRecord(module:string, input:Record<string,any>, _prefi
 }
 export async function deleteRecord(module:string, input:Record<string,any>) { await request("delete", { module, data:input }); }
 export async function signOut() {
+  try { await stopDeviceNotifications(notificationsRequest); } catch {
+    const registration = await navigator.serviceWorker?.getRegistration("/");
+    const subscription = await registration?.pushManager?.getSubscription();
+    await subscription?.unsubscribe();
+    localStorage.removeItem("crm-push-enabled");
+  }
   try { await request("logout"); } catch { /* A failed network sign-out still clears the local session. */ }
   localStorage.removeItem(SESSION_KEY);
   localStorage.removeItem(NAME_KEY);
 }
 export async function verifyPrincipalAdminCode(_pin:string) {
   return { success:false, error:"Gérez les accès depuis l’administration du CRM principal." };
+}
+
+export async function notificationsRequest(action:string, data:Record<string,unknown> = {}) {
+  const token = localStorage.getItem(SESSION_KEY);
+  if (!token) throw new Error("Reconnectez-vous au CRM.");
+  const response = await fetch("https://vdmlixjrbudklieictfj.supabase.co/functions/v1/crm-notifications", {
+    method:"POST", headers:{"Content-Type":"application/json",apikey:PUBLISHABLE_KEY,"X-Collaborator-Session":token},
+    body:JSON.stringify({action,...data}),
+  });
+  const result = await response.json().catch(()=>({}));
+  if (!response.ok) throw new Error(result.error || "Le service de notification est indisponible.");
+  return result;
 }
