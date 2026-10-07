@@ -531,6 +531,15 @@ function Discussion({name,rows,onRefresh,onRead,unreadRooms}:{name:string;rows:C
   const items=rows.filter(row=>row.data?.kind==="message"&&discussionRoomKey(pick(row.data,"salle","room")||"Général")===(activeRoom?.key||"")).map(row=>({row,auteur:pick(row.data,"auteur","author")||"Équipe",heure:pick(row.data,"horodatage","heure")||"",texte:pick(row.data,"message","texte","text")||""}));
   const visibleIds=items.map(item=>item.row.id).join("|");
   const activeRoomUnread=unreadRooms.includes(activeRoom?.key||"");
+  useEffect(()=>{
+    const markVisibleRoomRead=()=>{
+      if(document.visibilityState !== "visible" || !activeRoom?.key || !activeRoomUnread)return;
+      onRead(activeRoom.key,visibleIds ? visibleIds.split("|") : []);
+    };
+    markVisibleRoomRead();
+    document.addEventListener("visibilitychange",markVisibleRoomRead);
+    return ()=>document.removeEventListener("visibilitychange",markVisibleRoomRead);
+  },[activeRoom?.key,activeRoomUnread,visibleIds,onRead]);
   const send=async()=>{if(!text.trim()||busy||!activeRoom)return;setBusy(true);try{await saveRecord("discussion",{kind:"message",salle:activeRoom.name,auteur:name,message:text.trim(),horodatage:new Date().toISOString(),_row:crypto.randomUUID()},"discussion");setText("");await onRefresh()}catch(err){alert(err instanceof Error?err.message:"Enregistrement impossible.")}finally{setBusy(false)}};
   const edit=async(row:CrmRecord)=>{if(!editingText.trim())return;setBusy(true);try{await saveRecord("discussion",{...recordData(row),message:editingText.trim(),kind:"message"},"discussion");setEditingId("");setEditingText("");await onRefresh()}catch(err){alert(err instanceof Error?err.message:"Modification impossible.")}finally{setBusy(false)}};
   const remove=async(row:CrmRecord)=>{if(!window.confirm("Supprimer ce message ?"))return;setBusy(true);try{await deleteRecord("discussion",{_crmId:row.id});await onRefresh()}catch(err){alert(err instanceof Error?err.message:"Suppression impossible.")}finally{setBusy(false)}};
