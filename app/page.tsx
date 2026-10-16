@@ -444,7 +444,7 @@ function normalizeLeaves(rows:CrmRecord[]):LeaveRow[] {
 }
 
 function Brand({light=false}:{light?:boolean}) { return <div className="relative flex items-center gap-3">
-  <div className={`size-10 rounded-full border grid place-items-center font-serif text-xl ${light?"border-[#C3C7D6] text-[#C3C7D6]":"border-[#303851] text-[#19213D]"}`}>B</div>
+  <img src="/icons/bc-192.png" alt="Maison Bosc · Collaborateurs" className="size-10 shrink-0 rounded-xl object-contain"/>
   <div><div className={`font-serif text-lg tracking-wide ${light?"text-white":"text-[#20253A]"}`}>MAISON BOSC</div><div className={`text-[10px] tracking-[.22em] ${light?"text-white/40":"text-[#57617E]"}`}>JOAILLERIE</div></div>
   </div> }
 
