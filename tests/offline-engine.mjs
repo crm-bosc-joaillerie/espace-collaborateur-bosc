@@ -8,7 +8,7 @@ const require=createRequire(path.resolve(process.env.OFFLINE_TEST_DEPS||'.','pac
 const source=existsSync('src/lib/offline-core.ts')?'src/lib/offline-core.ts':'lib/offline-core.ts';
 Object.defineProperty(globalThis,'indexedDB',{value:indexedDB});
 const locks=new Map();const nav={onLine:false,locks:{request:async(name,fn)=>{const prior=locks.get(name)||Promise.resolve();const next=prior.then(fn,fn);locks.set(name,next.catch(()=>{}));return next}}};
-Object.defineProperty(globalThis,'navigator',{value:nav});globalThis.window=new EventTarget();
+Object.defineProperty(globalThis,'navigator',{value:nav});globalThis.window=new EventTarget();globalThis.fetch=async()=>({ok:true,json:async()=>({service:'bosc-crm'})});
 const elements=new Map();const element=()=>({style:{},setAttribute(){},append(){},replaceChildren(){},remove(){},set id(id){elements.set(id,this)}});
 globalThis.document={body:element(),hidden:true,addEventListener(){},getElementById:id=>elements.get(id),createElement:element};
 writeFileSync(path.join(os.tmpdir(),'offline-engine-test.mjs'),ts.transpileModule(readFileSync(source,'utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2023,module:ts.ModuleKind.ESNext}}).outputText);
@@ -20,9 +20,20 @@ const other={id:'other',record_key:'other',data:{kind:'entry',interventionId:'ot
 const v=new OfflineStore('owner-a',replay);await v.cache('pochettes',[a,other]);await v.cache('planning',[{...a,id:'p'},other]);remote.set('a',a);
 await v.enqueue('pochettes','save',{...a,data:{...a.data,note:'après'}},'v1');assert.equal((await v.read('planning')).find(r=>r.id==='p').data.note,'après');
 const restored=new OfflineStore('owner-a',replay);assert.equal((await restored.read('pochettes')).find(r=>r.id==='a').data.note,'après');assert.equal(await restored.pending(),1);
-nav.onLine=true;await restored.flush();assert.equal(await restored.pending(),0);assert.equal(remote.get('a').data.note,'après');await restored.flush();assert.equal(sent,1);
-await restored.enqueue('pochettes','save',{...a,data:{...a.data,note:'local conflict'}},'v1');await restored.flush();assert.equal(await restored.pending(),1);assert.equal(remote.get('a').data.note,'après');assert.equal((await restored.read('pochettes')).find(r=>r.id==='a').data.note,'local conflict');
+nav.onLine=true;await restored.flush(true);assert.equal(await restored.pending(),0);assert.equal(remote.get('a').data.note,'après');await restored.flush(true);assert.equal(sent,1);
+await restored.enqueue('pochettes','save',{...a,data:{...a.data,note:'local conflict'}},'v1');await restored.flush(true);assert.equal(await restored.pending(),1);assert.equal(remote.get('a').data.note,'après');assert.equal((await restored.read('pochettes')).find(r=>r.id==='a').data.note,'local conflict');
 const separate=new OfflineStore('owner-b',replay);await assert.rejects(separate.read('pochettes'));assert.equal(await separate.pending(),0);
-await restored.clear();await restored.cache('pochettes',[a,other]);await restored.cache('planning',[{...a,id:'p'},other]);await restored.enqueue('pochettes','delete',a,'v2');assert.equal((await restored.read('planning')).length,1);await restored.flush();assert.equal(remote.has('a'),false);assert.equal((await restored.read('pochettes'))[0].id,'other');
+await restored.clear();await restored.cache('pochettes',[a,other]);await restored.cache('planning',[{...a,id:'p'},other]);await restored.enqueue('pochettes','delete',a,'v2');assert.equal((await restored.read('planning')).length,1);await restored.flush(true);assert.equal(remote.has('a'),false);assert.equal((await restored.read('pochettes'))[0].id,'other');
 const db=await new Promise(resolve=>{const r=indexedDB.open('bosc-offline-v1',1);r.onsuccess=()=>resolve(r.result)});const stored=await new Promise(resolve=>{const r=db.transaction('vault').objectStore('vault').get('data:owner-a');r.onsuccess=()=>resolve(r.result)});assert.ok(stored.bytes instanceof ArrayBuffer);assert.ok(stored.iv);assert.equal(JSON.stringify(stored).includes('4739'),false);db.close();
-console.log('PASS: encrypted persistence, offline edits, paired deletion, unrelated intervention preserved, replay once, conflict retention, account isolation.');process.exit(0);
+console.log('PASS: encrypted persistence, offline edits, paired deletion, unrelated intervention preserved, replay once, conflict retention, account isolation.');
+// Commands survive a failed probe, resume in dependency order and retain IDs on retry.
+let probeOK=false, calls=[], failOnce=true;
+globalThis.fetch=async()=>{if(!probeOK)throw new TypeError('network down');return {ok:true,json:async()=>({service:'bosc-crm'})}};
+const commands=new OfflineStore('commands',async j=>{calls.push(j.row.record_key);if(j.row.record_key==='mail'&&failOnce){failOnce=false;throw new TypeError('lost response')}});
+await commands.enqueueCommand('mail',{label:'Mail'},30);await commands.enqueueCommand('client',{label:'Client'},0);
+await commands.flush(true);assert.equal(await commands.pending(),2);assert.deepEqual(calls,[]);
+probeOK=true;await commands.flush(true);assert.deepEqual(calls,['client','mail']);assert.equal(await commands.pending(),1);
+await commands.flush();assert.equal(calls.length,2,'15-minute throttle');
+const restoredCommands=new OfflineStore('commands',async j=>{calls.push(j.row.record_key)});await restoredCommands.flush(true);assert.equal(await restoredCommands.pending(),0);assert.deepEqual(calls,['client','mail','mail']);
+console.log('PASS: failed probe retains queue, clients before mail, transient retry, 15-minute throttle, restart recovery.');
+process.exit(0);

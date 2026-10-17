@@ -16,7 +16,7 @@ async function request(action:string, data:Record<string,any> = {}, authenticate
   const response = await fetch(ENDPOINT, {
     method:"POST",
     headers:{ "Content-Type":"application/json", apikey:PUBLISHABLE_KEY, ...(token ? { "X-Collaborator-Session":token } : {}) },
-    body:JSON.stringify({ action, ...data }),
+    body:JSON.stringify({ action, ...data }), signal:AbortSignal.timeout(60000),
   });
   const result = await response.json().catch(() => ({}));
   if (!response.ok) {
@@ -32,9 +32,9 @@ async function offline(){
  const digest=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(localStorage.getItem(DEVICE_KEY)||token)))).map(x=>x.toString(16).padStart(2,'0')).join('');
  if(offlineVault?.owner===digest)return offlineVault;
  offlineVault=new OfflineStore(digest,async j=>{
-   if(j.kind!=='save'||j.module!=='pochettes')throw Error('Cette action nécessite une connexion.');
+   if(!['save','delete'].includes(j.kind))throw Error('Opération inconnue.');
    const input={...j.row.data,_crmId:j.base?j.row.id:undefined,_offlineBase:j.base,_offlineKey:j.row.id,_offlineMutation:j.id};
-   await request('save',{module:'pochettes',data:input});
+   await request(j.kind==='delete'?'delete':'save',{module:j.module,data:input});
  });return offlineVault;
 }
 
@@ -63,28 +63,26 @@ export async function activeName() {
   const v=await offline();
   if(!navigator.onLine){const auth=await v.meta('auth');return auth&&auth.until>Date.now()?auth.name:null;}
   try {const result=await request("me");await v.meta('auth',{name:result.name,until:Date.now()+86400000});void v.flush();return result.name as string;}
-  catch(e:any){if(e.status===401||e.status===403){await v.clear();localStorage.removeItem(SESSION_KEY);return null;}const auth=await v.meta('auth');return auth&&auth.until>Date.now()?auth.name:null;}
+  catch(e:any){if(e.status===401||e.status===403){await v.meta('auth',{until:0});localStorage.removeItem(SESSION_KEY);return null;}const auth=await v.meta('auth');return auth&&auth.until>Date.now()?auth.name:null;}
 }
 export async function readSharedCrm():Promise<SharedCrmData> {
  const v=await offline();if(!navigator.onLine){const auth=await v.meta('auth');if(!auth||auth.until<Date.now())throw Error('Reconnectez cet appareil pour renouveler son accès hors ligne.');}let data:SharedCrmData;
  try{if(!navigator.onLine)throw new TypeError('offline');await v.flush();data=await request('read');await v.meta('auth',{name:localStorage.getItem(NAME_KEY),until:Date.now()+86400000});for(const [module,rows]of Object.entries(data))if(Array.isArray(rows))await v.cache(module,rows);}
  catch(e:any){if(!(e instanceof TypeError)&&e.status)throw e;data={} as SharedCrmData;for(const module of ['planning','pochettes','devis','discussion','messages','conges','primes','commandes'])(data as any)[module]=await v.read(module);}
- data.pochettes=await v.read('pochettes') as CrmRecord[];return data;
+ for(const module of ['planning','pochettes','discussion','messages','conges']) (data as any)[module]=await v.read(module);data.conges=[...data.conges,...data.planning.filter(r=>r.data.kind==='conge'&&!data.conges.some(c=>c.id===r.id))];return data;
 }
-export async function saveRecord(module:string, input:Record<string,any>, _prefix = module) {
-  if(!navigator.onLine){
-    if(module!=='pochettes')throw Error('Cette action nécessite une connexion. Les pochettes restent modifiables hors ligne.');
-    const v=await offline();const rows=await v.read(module);const row=input._crmId?rows.find(r=>r.id===input._crmId):null;
-    if(input._crmId&&(!row||!row.updated_at))throw Error('Rechargez cette fiche avec une connexion avant de la modifier hors ligne.');
-    const id=row?.id||crypto.randomUUID();
-    await v.enqueue(module,'save',{id,record_key:row?.record_key||'offline:'+id,module,data:{...row?.data,...input,kind:'entry',no:input.no,nPochette:input.no,designation:input.piece,statut:input.etat},updated_at:row?.updated_at},row?.updated_at);
-    return input;
-  }
-  const v=await offline();if(await v.pending())await v.flush();if(await v.pending())throw Error("Réglez les modifications en attente avant un nouvel enregistrement en ligne.");
-  await request("save", { module, data:input });
-  return input;
+async function queueWrite(module:string,input:Record<string,any>,kind:'save'|'delete'){
+ const v=await offline();const auth=await v.meta('auth');if(!auth||auth.until<Date.now())throw Error('Reconnectez cet appareil pour renouveler son accès.');
+ if(!['pochettes','messages','discussion','planning'].includes(module)||(module==='planning'&&input.kind!=='conge')||(module==='discussion'&&input.kind!=='message'))throw Error('Cette opération nécessite une connexion.');
+ let rows:CrmRecord[]=[];try{rows=await v.read(module) as CrmRecord[]}catch{}const row=input._crmId?rows.find(r=>r.id===input._crmId):null;
+ if(input._crmId&&(!row||(!row.updated_at&&!row.record_key.startsWith('offline:'))))throw Error('Ouvrez cette fiche avec une connexion avant de la modifier hors ligne.');
+ const id=row?.id||crypto.randomUUID();const name=localStorage.getItem(NAME_KEY)||'';
+ const data={...row?.data,...input,...(module==='pochettes'?{kind:'entry',no:input.no,nPochette:input.no,designation:input.piece,statut:input.etat}:{kind:input.kind||'message'}),...(module==='discussion'?{auteur:name,horodatage:row?.data.horodatage||new Date().toISOString()}:{}),...(module==='planning'?{collaborateur:name,statut:'En attente'}:{}),...(module==='messages'?{enregistrePar:name}: {})};
+ await v.enqueue(module,kind,{id,record_key:row?.record_key||'offline:'+id,module,data,updated_at:row?.updated_at},row?.updated_at);
+ if(navigator.onLine)await v.flush(true);return input;
 }
-export async function deleteRecord(module:string, input:Record<string,any>) { await request("delete", { module, data:input }); }
+export async function saveRecord(module:string,input:Record<string,any>,_prefix=module){return queueWrite(module,input,'save')}
+export async function deleteRecord(module:string,input:Record<string,any>){if(module!=='discussion')throw Error('Suppression non autorisée.');return queueWrite(module,{...input,kind:'message'},'delete')}
 export async function signOut() {
   const v=await offline();if(await v.pending())throw Error("Synchronisez ou réglez les modifications en attente avant de vous déconnecter.");await v.clear();
   try { await stopDeviceNotifications(notificationsRequest); } catch {

@@ -1,5 +1,5 @@
 
-const SHELL_CACHE='bosc-shell-offline-20261016-v1';
+const SHELL_CACHE='bosc-shell-offline-20261017-v2';
 async function prepareShell(){
  const cache=await caches.open(SHELL_CACHE);const home=await fetch('/',{cache:'reload'});if(!home.ok)throw Error('Shell unavailable');
  await cache.put('/',home.clone());const html=await home.text();
