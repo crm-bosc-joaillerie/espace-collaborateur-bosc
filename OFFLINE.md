@@ -1,20 +1,12 @@
 # Mode hors ligne
 
-Ouvrir l’application et les rubriques souhaitées une première fois avec une connexion, puis fermer et rouvrir le CRM pour activer le nouveau service worker. Le cache de l’application ne contient que des fichiers statiques. Les données et les modifications en attente sont chiffrées dans IndexedDB, séparées par compte ou appareil collaborateur.
 
-L’accès hors ligne est limité à 24 heures depuis la dernière vérification en ligne. Le CRM principal conserve les fiches métier déjà consultées et les références Clients résolues sur un appareil autorisé. La création/modification des fiches Clients privées, les envois e-mail/SMS et l’administration nécessitent une connexion. Le CRM collaborateur permet la consultation des données chargées et la création/modification des pochettes hors ligne. Les autres actions collaborateur nécessitent une connexion.
+## Extension du 17 octobre 2026
 
-Les changements ne partent qu’au retour de la connexion avec le CRM ouvert, ou à sa réouverture. Le statut en bas de l’écran signale les éléments en attente. Les conflits conservent la version locale : Voir permet de la consulter, de réessayer sans écraser ou de l’abandonner. La déconnexion est bloquée tant que des changements restent en attente.
+La file chiffrée persiste sur cet appareil. Test réseau réel `/network-check.json` toutes les 15 minutes, ainsi qu’au retour du réseau et au premier plan. La synchronisation traite toutes les demandes dans leur ordre de dépendance : fiches clients, écritures CRM, e-mails/confirmations SMS. Les erreurs réseau restent en attente ; un conflit ou un envoi incertain exige une vérification dans « Voir ».
 
-Les mises à jour utilisent la version serveur updated_at. Le relais collaborateur utilise également un identifiant stable pour dédupliquer les reprises. La suppression d’une intervention conserve le lien planning/pochette ; elle ne supprime pas les autres interventions ni les documents commerciaux.
+CRM principal : créations/modifications de clients privés avec UUID stable et journal serveur anti-doublon ; devis/PDF et e-mails mis en attente ; confirmations SMS de rendez-vous existants mises en attente. CRM collaborateur : pochettes, messages, discussions et demandes de congés, avec contrôle des autorisations et de version côté serveur. Une session expirée conserve les travaux à synchroniser après reconnexion.
 
-## Vérification
+Les e-mails passent à envoyé après acceptation par le serveur. Les SMS sont ensuite transmis par le relais Mac : le Mac doit être disponible. Le composant externe Calendly et l’envoi manuel dans Messages restent dépendants de leur application ; une réservation externe ne peut pas être confirmée hors ligne. Administration, connexion et autorisation des appareils nécessitent le réseau.
 
-Compilation habituelle du projet. Test du moteur avec IndexedDB simulé et WebCrypto Node :
-
-```sh
-npm install --prefix /tmp/bosc-offline-tests fake-indexeddb@6.2.4 typescript@5.9.3 --ignore-scripts
-OFFLINE_TEST_DEPS=/tmp/bosc-offline-tests node tests/offline-engine.mjs
-```
-
-Une validation sur iPhone réel reste nécessaire : ouverture connectée, activation par fermeture/réouverture, mode avion, modification de pochette, réouverture puis reconnexion. Aucun envoi client réel n’est nécessaire à cet essai.
+Sur iPhone, iOS peut suspendre l’application fermée ou en arrière-plan : le contrôle reprend à la réouverture. Ouvrir d’abord les rubriques en ligne ; accès local validé 24 heures. Ne pas effacer les données du navigateur tant qu’il reste des opérations. Après mise à jour, fermer tous les onglets du CRM puis rouvrir en ligne.
