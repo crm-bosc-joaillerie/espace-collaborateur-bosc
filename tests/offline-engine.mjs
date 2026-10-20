@@ -36,4 +36,12 @@ probeOK=true;await commands.flush(true);assert.deepEqual(calls,['client','mail']
 await commands.flush();assert.equal(calls.length,2,'15-minute throttle');
 const restoredCommands=new OfflineStore('commands',async j=>{calls.push(j.row.record_key)});await restoredCommands.flush(true);assert.equal(await restoredCommands.pending(),0);assert.deepEqual(calls,['client','mail','mail']);
 console.log('PASS: failed probe retains queue, clients before mail, transient retry, 15-minute throttle, restart recovery.');
+
+const independent=[];const independentQueue=new OfflineStore('independent',async j=>{if(j.row.record_key==='broken-client')throw Error('client conflict');independent.push(j.row.record_key)});
+await independentQueue.enqueueCommand('broken-client',{service:'clients',data:{client:{id:'broken'}}},0);
+await independentQueue.enqueueCommand('dependent-sms',{service:'relay',data:{client:'broken'}},30);
+await independentQueue.enqueueCommand('unrelated-sms',{service:'relay',data:{client:'other'}},30);
+await independentQueue.enqueue('discussion','save',{id:'discussion',record_key:'discussion',data:{message:'test'}});
+await independentQueue.flush(true);assert.deepEqual(independent,['discussion','unrelated-sms']);assert.equal(await independentQueue.pending(),2);
+console.log('PASS: a conflicting client preserves its dependent SMS without blocking independent discussion/SMS.');
 process.exit(0);
