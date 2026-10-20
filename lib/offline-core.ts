@@ -36,11 +36,12 @@ export class OfflineStore {
       if(!navigator.onLine)return;
       const r=await fetch('/network-check.json?t='+Date.now(),{cache:'no-store',signal:AbortSignal.timeout(8000)});
       if(!r.ok||(await r.json()).service!=='bosc-crm')return;
+      const deferred=new Set<string>();
       for(;;){
-        const j=await this.atomic(s=>[...s.jobs].sort((a,b)=>(a.priority??10)-(b.priority??10))[0]);if(!j||j.error)break;
+        const j=await this.atomic(s=>[...s.jobs].sort((a,b)=>(a.priority??10)-(b.priority??10)).find(j=>!j.error&&!deferred.has(j.id)&&!s.jobs.some(dep=>{if(dep.id===j.id)return false;const client=j.row.data.clientId||j.row.data.data?.client;const clientDependency=dep.kind==='command'&&dep.row.data.service==='clients'&&dep.row.data.data?.client?.id===client;const quoteDependency=j.kind==='command'&&j.row.data.service==='quoteEmail'&&dep.module==='devis'&&String(dep.row.data.id||dep.row.record_key)===String(j.row.data.data?.quote);return clientDependency||quoteDependency})));if(!j)break;
         await this.atomic(s=>{const x=s.jobs.find(x=>x.id===j.id);if(x)x.attempted=true});
         try{await this.replay(j);await this.atomic(s=>{s.jobs=s.jobs.filter(x=>x.id!==j.id)});changed=true;}
-        catch(e:any){if(!navigator.onLine||e instanceof TypeError||e.name==='TimeoutError'||e.name==='AbortError'||e.status>=500||e.status===429||e.retryable)break;await this.atomic(s=>{const job=s.jobs.find(x=>x.id===j.id);if(job)job.error=e.message||'Synchronisation non confirmée';});break}
+        catch(e:any){if(e.retryable){deferred.add(j.id);continue}if(!navigator.onLine||e instanceof TypeError||e.name==='TimeoutError'||e.name==='AbortError'||e.status>=500||e.status===429||e.retryable)break;await this.atomic(s=>{const job=s.jobs.find(x=>x.id===j.id);if(job)job.error=e.message||'Synchronisation non confirmée';});continue}
       }
     }catch{/* A failed probe keeps every operation queued. */}
     finally{this.running=false;await this.refresh();if(changed){window.dispatchEvent(new Event('crm:offline-synced'));window.dispatchEvent(new Event('crm:atelier-changed'));}}
