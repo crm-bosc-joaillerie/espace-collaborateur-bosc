@@ -1,3 +1,4 @@
+import {withClientLabels} from "./client-labels.mjs";
 import { createClient } from "npm:@supabase/supabase-js@2.116.0";
 import {isDeviceOwner} from "./device-owner.mjs";
 
@@ -6,14 +7,13 @@ const secret = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 const publishable = Deno.env.get("SUPABASE_ANON_KEY") || "";
 const db = createClient(url, secret, { auth: { persistSession: false } });
 const auth = createClient(url, publishable, { auth: { persistSession: false } });
-const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization,apikey,content-type,x-collaborator-session", "Access-Control-Allow-Methods": "POST,OPTIONS", "Content-Type": "application/json", "Cache-Control": "no-store" };
+const cors = { "Access-Control-Allow-Headers": "authorization,apikey,content-type,x-collaborator-session", "Access-Control-Allow-Methods": "POST,OPTIONS", "Content-Type": "application/json", "Cache-Control": "no-store" };
 const text = (value: unknown) => String(value ?? "").trim();
 const key = (value: unknown) => text(value).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase("fr").replace(/[^a-z0-9]+/g, "-").replace(/^-|-+$/g, "");
 const comparable = (value: unknown) => key(value).replace(/-/g, "");
 const bytes = (length = 32) => { const array = crypto.getRandomValues(new Uint8Array(length)); return Array.from(array, b => b.toString(16).padStart(2, "0")).join(""); };
 async function hash(input: string) { const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(input)); return Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, "0")).join(""); }
 async function pinHash(pin: string, salt: string) { const base = await crypto.subtle.importKey("raw", new TextEncoder().encode(pin), "PBKDF2", false, ["deriveBits"]); const digest = await crypto.subtle.deriveBits({ name: "PBKDF2", salt: new TextEncoder().encode(salt), iterations: 310000, hash: "SHA-256" }, base, 256); return Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, "0")).join(""); }
-function reply(body: unknown, status = 200) { return new Response(JSON.stringify(body), { status, headers: cors }); }
 function fail(message: string, status = 400): never { throw Object.assign(new Error(message), { status }); }
 function requireResult<T>(result: { data: T; error: { message: string } | null }): T { if (result.error) fail("Erreur de stockage.", 500); return result.data; }
 type Account = { id: string; display_name: string; name_key: string; is_active: boolean };
@@ -69,7 +69,12 @@ function roomAllowed(config: Record<string, any>, room: string, name: string) {
 }
 
 Deno.serve(async req => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
+  const origin=req.headers.get("origin");
+  const allowedOrigins=["https://crm-vite-pied.vercel.app","https://crm-vite-bosc-joaillerie.vercel.app","https://espace-collaborateur-bosc.vercel.app"];
+  if(origin&&!allowedOrigins.includes(origin))return new Response("Forbidden",{status:403,headers:{"Cache-Control":"no-store","Vary":"Origin"}});
+  const headers={...cors,...(origin?{"Access-Control-Allow-Origin":origin,"Vary":"Origin"}:{})};
+  const reply=(body:unknown,status=200)=>new Response(JSON.stringify(body),{status,headers});
+  if (req.method === "OPTIONS") return new Response("ok", { headers });
   if (req.method !== "POST") return reply({ error: "Méthode refusée." }, 405);
   try {
     const body = await req.json();
@@ -155,7 +160,10 @@ Deno.serve(async req => {
         objet: row.data.objet || row.data.article, date: row.data.date || row.data.dateSaisie,
         etat: row.data.etat || row.data.statut,
       } }));
-      return reply({ planning: ownPlanning, pochettes: ownPochettes, devis: safeDevis, discussion: permittedDiscussion, messages, conges: planning.filter(row => row.data?.kind === "conge" && assigned(row, account.display_name)), primes: [], commandes: safeOrders });
+      const clientIds=[...new Set([...ownPlanning,...ownPochettes].map(row=>text(row.data?.clientId)).filter(id=>/^[0-9a-f-]{36}$/i.test(id)))];
+      const clientLabels:any[]=[];
+      for(let start=0;start<clientIds.length;start+=100){clientLabels.push(...requireResult(await db.from("crm_client_labels").select("client_id,display_name").in("client_id",clientIds.slice(start,start+100))));}
+      return reply({ planning: withClientLabels(ownPlanning,clientLabels), pochettes: withClientLabels(ownPochettes,clientLabels), devis: withClientLabels(safeDevis,clientLabels), discussion: permittedDiscussion, messages, conges: planning.filter(row => row.data?.kind === "conge" && assigned(row, account.display_name)), primes: [], commandes: safeOrders });
     }
     if (action === "save") {
       const module = text(body.module), input = body.data || {};
