@@ -1,3 +1,4 @@
+import {createNoteClient} from './pochette-notes-client.mjs';
 import {OfflineStore} from './offline-core';
 import { stopDeviceNotifications } from "./Notifications";
 const ENDPOINT = "https://vdmlixjrbudklieictfj.supabase.co/functions/v1/collaborator-gateway";
@@ -32,6 +33,7 @@ async function offline(){
  const digest=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(localStorage.getItem(DEVICE_KEY)||token)))).map(x=>x.toString(16).padStart(2,'0')).join('');
  if(offlineVault?.owner===digest)return offlineVault;
  offlineVault=new OfflineStore(digest,async j=>{
+   if(j.module==='pochetteNotes'){await request('shared_notes',j.row.data);return;}
    if(!['save','delete'].includes(j.kind))throw Error('Opération inconnue.');
    const input={...j.row.data,_crmId:j.base?j.row.id:undefined,_offlineBase:j.base,_offlineKey:j.row.id,_offlineMutation:j.id};
    await request(j.kind==='delete'?'delete':'save',{module:j.module,data:input});
@@ -111,3 +113,5 @@ export async function notificationsRequest(action:string, data:Record<string,unk
   return result;
 }
 
+
+export const sharedNotes=createNoteClient((data:Record<string,any>)=>request("shared_notes",data),async()=>{const v=await offline();const auth=await v.meta("auth");if(!auth||auth.until<Date.now())throw Error("Reconnectez-vous pour renouveler votre accès aux notes.");return v},true);
