@@ -11,7 +11,7 @@ export function PochetteNotesProvider({api,principal=false,children}:{api:Api;pr
  return <Notes.Provider value={{notes,api,principal,refresh,replace}}>{children}</Notes.Provider>;
 }
 export function PochetteName({number,children}:{number:any;children:React.ReactNode}){
- const {notes}=useContext(Notes);const pending=notes[String(number||'').trim()]?.pending;
+ const {notes,principal}=useContext(Notes);const pending=principal&&notes[String(number||'').trim()]?.pending;
  return <span style={pending?{color:'#B42318',fontWeight:700}:undefined} title={pending?'Note du collaborateur à lire et à marquer comme vue':undefined}>{children}</span>;
 }
 export function PochetteNote({number}:{number:any}){
