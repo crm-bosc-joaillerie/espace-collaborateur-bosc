@@ -30,11 +30,18 @@ export function pocketWrites(group:Record<string,any>|null,input:Record<string,a
     const write={...input};
     if(member && group) {
       for(const field of ["piece","etat","livraison","client","no"]) {
-        if(input[field]===undefined || input[field]===group[field])write[field]=member[field];
+        if(input[field]===undefined || input[field]===group[field])write[field]=field==="piece" ? member.data?.designation || member.piece : member[field];
       }
       if(input.note===undefined || input.note===String(group.data?.note || group.data?.commentaire || ""))write.note=member.data?.note || member.data?.commentaire || "";
     }
     return {...write,kind:"entry",_crmId:member?._crmId,record_key:member?.record_key,
       ...(member?.data?.interventionId?{interventionId:member.data.interventionId}:{})};
   });
+}
+
+export function pocketDesignation(entry:Record<string,any>,quotes:Record<string,any>[]) {
+  const number=String(entry.nPochette ?? entry.no ?? entry.pochette ?? "").trim();
+  if(!number)return "";
+  const match=quotes.map(record=>record.data || record).filter(quote=>[quote.id,quote.nPochette,quote.numeroPochette,quote.pochette,quote.no].some(value=>value!=null&&String(value).trim()===number)&&String(quote.designation || "").trim()).at(-1);
+  return String(match?.designation || "");
 }
