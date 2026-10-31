@@ -7,8 +7,9 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
+    "build": "npm run test:pockets && vite build",
+    "preview": "vite preview",
+    "test:pockets": "node tests/pocket-groups.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",

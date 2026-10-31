@@ -1,5 +1,6 @@
 "use client";
 
+import {groupCollaboratorPockets,pocketWrites} from "@/lib/pocket-groups";
 import {PochetteNotesProvider,PochetteName,PochetteNote} from "@/components/PochetteNotes";
 import {sharedNotes} from "@/lib/crm-sync";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -17,8 +18,8 @@ import { notificationsRequest, activeName, deviceStatus, login, requestDevice, s
 
 type View = "accueil" | "discussion" | "messages" | "planning" | "pochettes" | "conges" | "commandes" | "primes" | "admin";
 type ClientMessage = { id:string; client:string; text:string; createdAt:string; resolved:boolean; deLaPartDe?:string; pour?:string; societe?:string; service?:string; tel?:string; email?:string; date?:string; heure?:string; enregistrePar?:string; rappellera?:boolean; merciDeRappeler?:boolean; urgent?:boolean; pourInfo?:boolean; contact?:string; _crmId?:string; record_key?:string };
-type PlanningRow = { id:string; heure:string; date:string; dateKey:string; monthKey:string; monthLabel:string; weekKey:string; weekLabel:string; pochette:string; type:string; client:string; piece:string; duree:string; statut:string; _crmId?:string; record_key?:string };
-type PochettesRow = { no:string; client:string; piece:string; livraison:string; duree:string; etat:string; dateKey:string; monthKey:string; monthLabel:string; weekKey:string; weekLabel:string; data?:Record<string,any>; _crmId?:string; record_key?:string };
+type PlanningRow = { id:string; heure:string; date:string; dateKey:string; monthKey:string; monthLabel:string; weekKey:string; weekLabel:string; pochette:string; type:string; client:string; piece:string; duree:string; statut:string; _crmId?:string; record_key?:string; members?:PlanningRow[] };
+type PochettesRow = { no:string; client:string; piece:string; livraison:string; duree:string; etat:string; dateKey:string; monthKey:string; monthLabel:string; weekKey:string; weekLabel:string; data?:Record<string,any>; _crmId?:string; record_key?:string; members?:PochettesRow[] };
 type LeaveRow = { id:string; debut:string; fin:string; jours:string; statut:string; motif:string; _crmId?:string; record_key?:string };
 type SupplierOrder = { id:string; fournisseur:string; reference:string; objet:string; date:string; etat:string; _crmId?:string; record_key?:string };
 type DiscussionRoomOption = { key:string; name:string; label:string };
@@ -576,8 +577,7 @@ function Planning({rows,filterRows=rows}:{rows:PlanningRow[];filterRows?:Plannin
   const weeks = useMemo(() => Array.from(new Map(filterRows.filter(row => row.weekKey && (month === "Tous les mois" || row.monthKey === month)).map(row => [row.weekKey, row.weekLabel])).entries()).sort(([a], [b]) => a.localeCompare(b)), [filterRows, month]);
   const hasFilter = month !== "Tous les mois" || week !== "Toutes les semaines" || type !== "Tous les types";
   const monthOnly = month !== "Tous les mois" && week === "Toutes les semaines";
-  const filtered = useMemo(() => rows
-    .filter(row => (month === "Tous les mois" || row.monthKey === month) && (week === "Toutes les semaines" || row.weekKey === week) && correspondTypePlanning(row.type, type))
+  const filtered = useMemo(() => groupCollaboratorPockets(rows, row => (month === "Tous les mois" || row.monthKey === month) && (week === "Toutes les semaines" || row.weekKey === week) && correspondTypePlanning(row.type, type))
     .sort((a, b) =>
       (a.monthKey || "9999-99").localeCompare(b.monthKey || "9999-99") ||
       (a.weekKey || "9999-S99").localeCompare(b.weekKey || "9999-S99") ||
@@ -612,11 +612,13 @@ function findPhotoSource(data?:Record<string,any>) {
 }
 
 function activeCollaboratorWork(planningRows:PlanningRow[], pochettesRows:PochettesRow[]) {
-  const statusByPochette = new Map(pochettesRows.map(row=>[row.no.trim(),row.etat]));
+  const groupedPlanning=groupCollaboratorPockets(planningRows);
+  const groupedPochettes=groupCollaboratorPockets(pochettesRows);
+  const statusByPochette = new Map(groupedPochettes.map(row=>[row.no.trim(),row.etat]));
   const isDone = (status:string) => /^fait(?:e|s|es)?$/.test(status.trim().toLocaleLowerCase("fr-FR"));
   return {
-    planning: planningRows.map(row=>({...row,statut:statusByPochette.get(row.pochette.trim()) ?? row.statut})).filter(row=>!isDone(row.statut)),
-    pochettes: pochettesRows.filter(row=>!isDone(row.etat)),
+    planning: groupedPlanning.map(row=>({...row,statut:statusByPochette.get(row.pochette.trim()) ?? row.statut})).filter(row=>!isDone(row.statut)),
+    pochettes: groupedPochettes.filter(row=>!isDone(row.etat)),
   };
 }
 
@@ -634,12 +636,12 @@ function Pochettes({rows,filterRows=rows,onSave}:{rows:PochettesRow[];filterRows
   useEffect(()=>{if(formOpen)editorRef.current?.scrollIntoView({block:"start",behavior:"smooth"})},[formOpen,editing]);
   const [saving,setSaving]=useState(false);
   const [saveError,setSaveError]=useState("");
-  const changeStatus=async(row:PochettesRow,etat:string)=>{if(saving)return;setSaving(true);setSaveError("");try{await onSave({no:row.no,client:row.client,piece:row.piece,livraison:row.livraison,etat,note:pick(row.data||{},"note","commentaire"),kind:"entry",_crmId:row._crmId,record_key:row.record_key});if(etat==="Fait"&&editing?._crmId===row._crmId){setEditing(null);setFormOpen(false)}setSelected(current=>current?._crmId===row._crmId?(etat==="Fait"?null:{...current,etat,data:{...current.data,etat,statut:etat}}):current);}catch(error){setSaveError(error instanceof Error?error.message:"Modification du statut impossible.");}finally{setSaving(false)}};
+  const changeStatus=async(row:PochettesRow,etat:string)=>{if(saving)return;setSaving(true);setSaveError("");try{for(const write of pocketWrites(row,{no:row.no,client:row.client,piece:row.piece,livraison:row.livraison,etat,note:pick(row.data||{},"note","commentaire")}))await onSave(write);if(etat==="Fait"&&editing?._crmId===row._crmId){setEditing(null);setFormOpen(false)}setSelected(current=>current?._crmId===row._crmId?(etat==="Fait"?null:{...current,etat,data:{...current.data,etat,statut:etat}}):current);}catch(error){setSaveError(error instanceof Error?error.message:"Modification du statut impossible.");}finally{setSaving(false)}};
   const [form,setForm]=useState({no:"",client:"",piece:"",livraison:"",etat:"En attente",note:""});
   const months=useMemo(()=>Array.from(new Map(filterRows.filter(row=>row.monthKey).map(row=>[row.monthKey,row.monthLabel])).entries()).sort(([a],[b])=>a.localeCompare(b)),[filterRows]);
   const weeks=useMemo(()=>Array.from(new Map(filterRows.filter(row=>row.weekKey&&(month==="Tous les mois"||row.monthKey===month)).map(row=>[row.weekKey,row.weekLabel])).entries()).sort(([a],[b])=>a.localeCompare(b)),[filterRows,month]);
   const hasFilter=q.trim().length>0||month!=="Tous les mois"||week!=="Toutes les semaines";
-  const filtered=useMemo(()=>rows.filter(p=>{
+  const filtered=useMemo(()=>groupCollaboratorPockets(rows,p=>{
     const haystack=[p.no,p.client,p.piece,p.livraison,p.etat,p.monthLabel,p.weekLabel,JSON.stringify(p.data||{})].join(" ").toLowerCase();
     return haystack.includes(q.toLowerCase())&&(month==="Tous les mois"||p.monthKey===month)&&(week==="Toutes les semaines"||p.weekKey===week);
   }).sort((a,b)=>
@@ -653,7 +655,7 @@ function Pochettes({rows,filterRows=rows,onSave}:{rows:PochettesRow[];filterRows
     if(nextMonth!=="Tous les mois"&&week!=="Toutes les semaines"&&!filterRows.some(row=>row.monthKey===nextMonth&&row.weekKey===week))setWeek("Toutes les semaines");
   };
   const openEditor=(row?:PochettesRow)=>{const p=row||{no:"",client:"",piece:"",livraison:"",etat:"En attente"};setEditing(row||null);setFormOpen(true);setForm({no:p.no,client:p.client,piece:p.piece,livraison:p.livraison,etat:p.etat,note:row ? pick(row.data || {}, "note", "commentaire") : ""})};
-  const save=async()=>{if(!form.no.trim()||!form.client.trim()){setSaveError("Renseignez le numéro de pochette et le client.");return}if(saving)return;setSaveError("");setSaving(true);try{await onSave({...form,kind:"entry",_crmId:editing?._crmId,record_key:editing?.record_key,interventionId:form.no});setEditing(null);setFormOpen(false)}catch(error){setSaveError(error instanceof Error?error.message:"Enregistrement impossible.")}finally{setSaving(false)}};
+  const save=async()=>{if(!form.no.trim()||!form.client.trim()){setSaveError("Renseignez le numéro de pochette et le client.");return}if(saving)return;setSaveError("");setSaving(true);try{for(const write of pocketWrites(editing,form))await onSave(write);setEditing(null);setFormOpen(false)}catch(error){setSaveError(error instanceof Error?error.message:"Enregistrement impossible.")}finally{setSaving(false)}};
   const selectedPhoto=selected?findPhotoSource(selected.data):"";
   return <>
     {saveError&&<p role="alert" className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{saveError}</p>}
