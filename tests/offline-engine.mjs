@@ -44,4 +44,28 @@ await independentQueue.enqueueCommand('unrelated-sms',{service:'relay',data:{cli
 await independentQueue.enqueue('discussion','save',{id:'discussion',record_key:'discussion',data:{message:'test'}});
 await independentQueue.flush(true);assert.deepEqual(independent,['discussion','unrelated-sms']);assert.equal(await independentQueue.pending(),2);
 console.log('PASS: a conflicting client preserves its dependent SMS without blocking independent discussion/SMS.');
+// Performance regressions must not sacrifice queued edits or durable encryption.
+nav.onLine=false;
+const batchVault=new OfflineStore('batch-performance',async()=>{});
+await batchVault.refresh();
+const originalSave=batchVault.save.bind(batchVault);let saves=0;
+batchVault.save=async state=>{saves++;return originalSave(state)};
+const modules=['planning','pochettes','devis','discussion','messages','conges','primes','commandes'];
+const fixture={id:'photo-row',record_key:'photo',data:{photo:'data:image/png;base64,fixture'},updated_at:'v1'};
+const batch=Object.fromEntries(modules.map(m=>[m,[fixture]]));
+await batchVault.cacheMany(batch,{auth:{until:Date.now()+86400000},sharedRevision:'first'});
+assert.equal(saves,1,'eight modules and auth require one encrypted write');
+saves=0;
+await batchVault.read('planning');await batchVault.readMany(modules);await batchVault.meta('auth');await batchVault.pending();await batchVault.refresh();
+assert.equal(saves,0,'reads and status must never rewrite the vault');
+await batchVault.enqueue('messages','save',{...fixture,data:{message:'local edit'}},'v1');
+await batchVault.enqueue('discussion','delete',fixture,'v1');
+saves=0;
+const merged=await batchVault.cacheMany(batch,{sharedRevision:'second'});
+assert.equal(saves,1);assert.equal(merged.messages[0].data.message,'local edit');assert.equal(merged.discussion.length,0);
+assert.equal(merged.planning[0].data.photo,fixture.data.photo);assert.equal(await batchVault.pending(),2);
+const batchRestored=new OfflineStore('batch-performance',async()=>{});
+assert.equal((await batchRestored.read('messages'))[0].data.message,'local edit');
+console.log('PASS: one encrypted write for eight modules, zero writes on reads, pending edits/deletions and offline photos retained.');
 process.exit(0);
+

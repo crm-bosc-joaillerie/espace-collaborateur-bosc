@@ -1,5 +1,5 @@
 
-const SHELL_CACHE='bosc-shell-offline-20261031-v8';
+const SHELL_CACHE='bosc-shell-offline-20261106-perf-v65';
 async function prepareShell(){
  const cache=await caches.open(SHELL_CACHE);const home=await fetch('/',{cache:'reload'});if(!home.ok)throw Error('Shell unavailable');
  await cache.put('/',home.clone());const html=await home.text();
@@ -47,4 +47,5 @@ self.addEventListener('notificationclick',event=>{
     await self.clients.openWindow(url.href);
   })());
 });
+
 

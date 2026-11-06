@@ -7,9 +7,10 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "npm run test:pockets && vite build",
+    "build": "npm run test:pockets && npm run test:performance && vite build",
     "preview": "vite preview",
-    "test:pockets": "node tests/pocket-groups.mjs"
+    "test:pockets": "node tests/pocket-groups.mjs",
+    "test:performance": "node tests/snapshot-sync.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",

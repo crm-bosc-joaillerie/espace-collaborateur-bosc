@@ -1,13 +1,14 @@
 import {withClientLabels} from "./client-labels.mjs";
 import { createClient } from "npm:@supabase/supabase-js@2.116.0";
 import {isDeviceOwner} from "./device-owner.mjs";
+import {pochetteNotes,pocketNumber} from './pochette-notes.ts';
 
 const url = Deno.env.get("SUPABASE_URL") || "";
 const secret = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 const publishable = Deno.env.get("SUPABASE_ANON_KEY") || "";
 const db = createClient(url, secret, { auth: { persistSession: false } });
 const auth = createClient(url, publishable, { auth: { persistSession: false } });
-const cors = { "Access-Control-Allow-Headers": "authorization,apikey,content-type,x-collaborator-session", "Access-Control-Allow-Methods": "POST,OPTIONS", "Content-Type": "application/json", "Cache-Control": "no-store" };
+const cors = { "Access-Control-Allow-Headers": "authorization,apikey,content-type,x-client-info,x-collaborator-session", "Access-Control-Allow-Methods": "POST,OPTIONS", "Access-Control-Max-Age": "600", "Content-Type": "application/json", "Cache-Control": "no-store" };
 const text = (value: unknown) => String(value ?? "").trim();
 const key = (value: unknown) => text(value).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase("fr").replace(/[^a-z0-9]+/g, "-").replace(/^-|-+$/g, "");
 const comparable = (value: unknown) => key(value).replace(/-/g, "");
@@ -39,14 +40,29 @@ async function session(req: Request) {
   if (!row || Date.parse(row.expires_at) < Date.now() || !device?.approved_at || device.revoked_at || !account?.is_active) fail("Session expirée ou appareil révoqué.", 401);
   return { account, deviceId: device.id };
 }
-async function allRows(module: string): Promise<RecordRow[]> {
-  const result: RecordRow[] = [];
-  for (let offset = 0; ; offset += 500) {
-    const rows = requireResult(await db.from("crm_records").select("id,module,record_key,data,updated_at").eq("workspace_key", "bosc").eq("module", module).order("created_at").range(offset, offset + 499)) as RecordRow[];
-    result.push(...rows);
-    if (rows.length < 500) return result;
+async function loadModule(module:string,columns:string,ids?:string[]):Promise<RecordRow[]> {
+  const result:RecordRow[]=[];
+  for(let offset=0;;offset+=500){
+    let query=db.from('crm_records').select(columns).eq('workspace_key','bosc').eq('module',module);
+    if(ids)query=query.in('id',ids);
+    const rows=requireResult(await query.order('created_at').order('id').range(offset,offset+499)) as unknown as RecordRow[];
+    result.push(...rows);if(rows.length<500)return result;
   }
 }
+// Share only simultaneous database reads. Do not retain rows across requests:
+// not every existing database writer updates updated_at.
+const moduleFlights=new Map<string,Promise<RecordRow[]>>();
+function allRows(module:string):Promise<RecordRow[]>{
+  let task=moduleFlights.get(module);
+  if(!task){
+    task=loadModule(module,'id,module,record_key,data,updated_at');
+    moduleFlights.set(module,task);
+    const pending=task;
+    void task.finally(()=>{if(moduleFlights.get(module)===pending)moduleFlights.delete(module)}).catch(()=>{});
+  }
+  return task.then(rows=>structuredClone(rows));
+}
+
 async function technicalActor() {
   const profile = requireResult(await db.from("profiles").select("id").eq("role", "owner").eq("is_active", true).limit(1).maybeSingle());
   if (!profile?.id) fail("Compte technique indisponible.", 500);
@@ -79,6 +95,11 @@ Deno.serve(async req => {
   try {
     const body = await req.json();
     const action = text(body.action);
+    if(action==='principal_notes'){
+      await administrator(req);
+      const allowed=body.mode==='list'||!body.mode?null:new Set((await Promise.all(['planning','pochettes'].map(allRows))).flat().filter(r=>r.data?.kind==='entry').map(r=>pocketNumber(r.data)));
+      return reply(await pochetteNotes(db,body,{name:'CRM principal',collaborator:false},allowed));
+    }
     if (action === "accounts" || action === "account_add" || action === "account_toggle" || action === "devices" || action === "device_approve" || action === "device_revoke") {
       await administrator(req, ['device_approve','device_revoke'].includes(action));
       if (action === "accounts") return reply({ accounts: requireResult(await db.from("collaborator_accounts").select("id,display_name,name_key,is_active").order("display_name")) });
@@ -135,6 +156,10 @@ Deno.serve(async req => {
       return reply({ sessionToken: token, name: device.collaborator_accounts.display_name });
     }
     const { account, deviceId } = await session(req);
+    if(action==='shared_notes'){
+      const own=(await Promise.all(['planning','pochettes'].map(allRows))).flat().filter(r=>r.data?.kind==='entry'&&assigned(r,account.display_name));
+      return reply(await pochetteNotes(db,body,{name:account.display_name,collaborator:true},new Set(own.map(r=>pocketNumber(r.data)))));
+    }
     if (action === "me") return reply({ name: account.display_name });
     if (action === "logout") { requireResult(await db.from("collaborator_sessions").delete().eq("token_hash", await hash(req.headers.get("X-Collaborator-Session") || ""))); return reply({ ok: true }); }
     if (action === "read") {
@@ -163,7 +188,11 @@ Deno.serve(async req => {
       const clientIds=[...new Set([...ownPlanning,...ownPochettes].map(row=>text(row.data?.clientId)).filter(id=>/^[0-9a-f-]{36}$/i.test(id)))];
       const clientLabels:any[]=[];
       for(let start=0;start<clientIds.length;start+=100){clientLabels.push(...requireResult(await db.from("crm_client_labels").select("client_id,display_name").in("client_id",clientIds.slice(start,start+100))));}
-      return reply({ planning: withClientLabels(ownPlanning,clientLabels), pochettes: withClientLabels(ownPochettes,clientLabels), devis: withClientLabels(safeDevis,clientLabels), discussion: permittedDiscussion, messages, conges: planning.filter(row => row.data?.kind === "conge" && assigned(row, account.display_name)), primes: [], commandes: safeOrders });
+      const snapshot={ planning: withClientLabels(ownPlanning,clientLabels), pochettes: withClientLabels(ownPochettes,clientLabels), devis: withClientLabels(safeDevis,clientLabels), discussion: permittedDiscussion, messages, conges: planning.filter(row => row.data?.kind === "conge" && assigned(row, account.display_name)), primes: [], commandes: safeOrders };
+      // Hash only the freshly authorised view: changed labels, access or deletions invalidate it.
+      const revision=await hash(JSON.stringify(snapshot));
+      if(body.revision===revision)return reply({unchanged:true,revision});
+      return reply({...snapshot,revision});
     }
     if (action === "save") {
       const module = text(body.module), input = body.data || {};
@@ -190,7 +219,8 @@ Deno.serve(async req => {
         }
         const status = text(input.etat);
         if (!["En attente", "En cours", "Fait"].includes(status)) fail("Statut invalide.");
-        const note = text(input.note);
+        if(row&&typeof input.note==='string'&&text(input.note)!==text(row.data.note))fail('Utilisez le bouton Note pour modifier la note partagée. Le texte de cette ancienne opération est conservé dans les modifications en attente.',409);
+        const note = row ? text(row.data.note) : text(input.note);
         if (note.length > 2000) fail("Note trop longue.");
         const no = text(input.no), client = text(input.client), piece = text(input.piece), livraison = text(input.livraison);
         if (!no || !client || no.length > 80 || client.length > 200 || piece.length > 500 || livraison.length > 100) fail("Pochette invalide.");
@@ -280,3 +310,4 @@ Deno.serve(async req => {
     return reply({ error: err.status && err.status < 500 ? err.message : "Erreur du service collaborateurs." }, err.status || 500);
   }
 });
+

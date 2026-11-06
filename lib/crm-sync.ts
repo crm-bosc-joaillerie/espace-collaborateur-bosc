@@ -67,12 +67,45 @@ export async function activeName() {
   try {const result=await request("me");await v.meta('auth',{name:result.name,until:Date.now()+86400000});void v.flush();return result.name as string;}
   catch(e:any){if(e.status===401||e.status===403){await v.meta('auth',{until:0});localStorage.removeItem(SESSION_KEY);return null;}const auth=await v.meta('auth');return auth&&auth.until>Date.now()?auth.name:null;}
 }
-export async function readSharedCrm():Promise<SharedCrmData> {
- const v=await offline();if(!navigator.onLine){const auth=await v.meta('auth');if(!auth||auth.until<Date.now())throw Error('Reconnectez cet appareil pour renouveler son accès hors ligne.');}let data:SharedCrmData;
- try{if(!navigator.onLine)throw new TypeError('offline');await v.flush();data=await request('read');await v.meta('auth',{name:localStorage.getItem(NAME_KEY),until:Date.now()+86400000});for(const [module,rows]of Object.entries(data))if(Array.isArray(rows))await v.cache(module,rows);}
- catch(e:any){if(!(e instanceof TypeError)&&e.status)throw e;data={} as SharedCrmData;for(const module of ['planning','pochettes','devis','discussion','messages','conges','primes','commandes'])(data as any)[module]=await v.read(module);}
- for(const module of ['planning','pochettes','discussion','messages','conges']) (data as any)[module]=await v.read(module);data.conges=[...data.conges,...data.planning.filter(r=>r.data.kind==='conge'&&!data.conges.some(c=>c.id===r.id))];return data;
+const SHARED_MODULES=['planning','pochettes','devis','discussion','messages','conges','primes','commandes'];
+const sharedFlights=new Map<string,Promise<SharedCrmData>>();
+export function readSharedCrm():Promise<SharedCrmData>{
+  const session=localStorage.getItem(SESSION_KEY)||'';
+  const current=sharedFlights.get(session);if(current)return current;
+  const task=readSharedSnapshot(session);sharedFlights.set(session,task);
+  void task.finally(()=>{if(sharedFlights.get(session)===task)sharedFlights.delete(session)}).catch(()=>{});
+  return task;
 }
+async function readSharedSnapshot(session:string):Promise<SharedCrmData>{
+  const v=await offline();let data:SharedCrmData;
+  if(navigator.onLine)await v.flush();
+  const cached=await v.atomic(s=>({
+    auth:s.meta.auth,
+    revision:SHARED_MODULES.every(m=>Array.isArray(s.rows[m]))?s.meta.sharedRevision:undefined,
+    rows:Object.fromEntries(SHARED_MODULES.map(m=>[m,s.rows[m]||[]])) as SharedCrmData,
+  }),false);
+  if(!navigator.onLine&&(!cached.auth||cached.auth.until<Date.now()))throw Error('Reconnectez cet appareil pour renouveler son accès hors ligne.');
+  try{
+    if(!navigator.onLine)throw new TypeError('offline');
+    const response=await request('read',{revision:cached.revision});
+    if(localStorage.getItem(SESSION_KEY)!==session)throw Error('La session a changé.');
+    if(response.unchanged){
+      if(!cached.revision||response.revision!==cached.revision)throw Error('Réponse de synchronisation invalide.');
+      data=await v.readMany(SHARED_MODULES) as SharedCrmData;
+      if(!cached.auth||cached.auth.until<Date.now()+23*3600000)await v.meta('auth',{name:localStorage.getItem(NAME_KEY),until:Date.now()+86400000});
+    }else{
+      const batch=Object.fromEntries(SHARED_MODULES.map(m=>{if(!Array.isArray(response[m]))throw Error('Réponse de synchronisation incomplète.');return [m,response[m]]}));
+      data=await v.cacheMany(batch,{sharedRevision:response.revision,auth:{name:localStorage.getItem(NAME_KEY),until:Date.now()+86400000}}) as SharedCrmData;
+    }
+  }catch(e:any){
+    if(e.status||localStorage.getItem(SESSION_KEY)!==session)throw e;
+    if(!cached.auth||cached.auth.until<Date.now())throw e;
+    data=await v.readMany(SHARED_MODULES) as SharedCrmData;
+  }
+  data.conges=[...data.conges,...data.planning.filter(r=>r.data.kind==='conge'&&!data.conges.some(c=>c.id===r.id))];
+  return data;
+}
+
 async function queueWrite(module:string,input:Record<string,any>,kind:'save'|'delete'){
  const v=await offline();const auth=await v.meta('auth');if(!auth||auth.until<Date.now())throw Error('Reconnectez cet appareil pour renouveler son accès.');
  if(!['pochettes','messages','discussion','planning'].includes(module)||(module==='planning'&&input.kind!=='conge')||(module==='discussion'&&input.kind!=='message'))throw Error('Cette opération nécessite une connexion.');
@@ -115,3 +148,4 @@ export async function notificationsRequest(action:string, data:Record<string,unk
 
 
 export const sharedNotes=createNoteClient((data:Record<string,any>)=>request("shared_notes",data),async()=>{const v=await offline();const auth=await v.meta("auth");if(!auth||auth.until<Date.now())throw Error("Reconnectez-vous pour renouveler votre accès aux notes.");return v},true);
+

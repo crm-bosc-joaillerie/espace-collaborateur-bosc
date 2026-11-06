@@ -752,7 +752,7 @@ export default function Home() {
   useEffect(()=>{if(name)void refreshShared()},[name]);
   useEffect(()=>{
     if(!name)return;
-    const timer=window.setInterval(()=>{if(!document.hidden)void readSharedCrm().then(setShared).catch(()=>{})},20000);
+    const timer=window.setInterval(()=>{if(!document.hidden)void readSharedCrm().then(setShared).catch(()=>{})},60000);
     const refreshOnReturn=()=>{if(!document.hidden)void readSharedCrm().then(setShared).catch(()=>{})};
     document.addEventListener("visibilitychange",refreshOnReturn);
     window.addEventListener("pageshow",refreshOnReturn);

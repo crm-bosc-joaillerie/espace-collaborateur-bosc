@@ -1,1 +1,2 @@
 export function withClientLabels(rows,labels){const names=new Map(labels.map(label=>[label.client_id,label.display_name]));return rows.map(row=>{const name=names.get(row.data?.clientId);return name?{...row,data:{...row.data,client:name,nomClient:name}}:row});}
+
